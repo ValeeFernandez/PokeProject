@@ -1,0 +1,7 @@
+{
+  "name": "pokeProjectFE",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "react-vite"
+}

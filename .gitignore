@@ -3,6 +3,7 @@
 
 # Ignorar la carpeta node_modules dentro de backend, solo por si las dudas y para que afine jijijiji
 /backend/node_modules/
+/frontend/pokeProjectFE/node_modules/
 
 # ignora cualquier node_modules en general
 node_modules/
