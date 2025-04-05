@@ -1,2 +1,23 @@
 /* For information on how to create your own theme, please see:
 http://ionicframework.com/docs/theming/ */
+:root {
+    --ion-background-color: #F2F2F2; /* Blanco */
+    --ion-background-color-rgb: 255, 255, 255;
+    /*Menú*/
+
+    /*Búsqueda*/
+    --ion-color-search-red:#841617;
+    --ion-color-search-blue:#4A7C99;
+    --ion-color-search-green:#94A386;
+    --ion-color-search-purple:#624C73;
+
+
+        --ion-color-search-gray: #C6C6C4;
+        --ion-color-search-gray-rgb: 198, 198, 196;
+        --ion-color-search-gray-contrast: #000000;
+        --ion-color-search-gray-contrast-rgb: 0, 0, 0;
+        --ion-color-search-gray-shade: #b0b0ae;
+        --ion-color-search-gray-tint: #d1d1cf;
+      
+
+}
