@@ -84,20 +84,27 @@ export const searchPokemon = async (query: string): Promise<PokemonDetails[]> =>
       return pokemon.name.toLowerCase().includes(queryLower);
     });
 
-    // Obtener detalles completos para cada resultado
+    // Obtener detalles completos para cada resultado con manejo de errores
     const detailedResults = await Promise.all(
-      basicResults.map(pokemon => fetchPokemonDetails(pokemon.name))
+      basicResults.map(pokemon => 
+        fetchPokemonDetails(pokemon.name).catch(error => {
+          console.error(`Error fetching details for ${pokemon.name}:`, error);
+          return null;
+        })
+      )
     );
 
-    // Ordenar: priorizar coincidencias al inicio del nombre
-    detailedResults.sort((a, b) => {
+    // Filtrar resultados nulos y ordenar
+    const validResults = detailedResults.filter(result => result !== null) as PokemonDetails[];
+    
+    validResults.sort((a, b) => {
       const aIndex = a.name.toLowerCase().indexOf(queryLower);
       const bIndex = b.name.toLowerCase().indexOf(queryLower);
       return aIndex - bIndex || a.name.localeCompare(b.name);
     });
 
-    searchCache.set(cacheKey, detailedResults);
-    return detailedResults;
+    searchCache.set(cacheKey, validResults);
+    return validResults;
 
   } catch (error) {
     console.error('Error en la búsqueda:', error);
@@ -134,19 +141,33 @@ export const fetchPokemonDetails = async (name: string): Promise<PokemonDetails>
     const response = await axios.get(`${API_URL}/${name.toLowerCase()}`);
     const data = response.data;
     
+    // Safely map stats with proper error handling
+    const stats: PokemonStat[] = [];
+    if (Array.isArray(data.stats)) {
+      data.stats.forEach((stat: any) => {
+        try {
+          if (stat && stat.stat && stat.base_stat !== undefined) {
+            stats.push({
+              name: stat.stat.name,
+              base: stat.base_stat
+            });
+          }
+        } catch (error) {
+          console.warn(`Error processing stat for ${name}:`, stat, error);
+        }
+      });
+    }
+
     return {
       id: data.id,
       name: data.name,
       url: `${API_URL}/${data.name}`,
-      height: data.height,
-      weight: data.weight,
-      types: data.types || [],
-      abilities: data.abilities || [],
+      height: data.height || 0,
+      weight: data.weight || 0,
+      types: Array.isArray(data.types) ? data.types : [],
+      abilities: Array.isArray(data.abilities) ? data.abilities : [],
       sprite: data.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${data.id}.png`,
-      stats: data.stats?.map((stat: any) => ({
-        name: stat.stat.name,
-        base: stat.base_stat
-      })) || []
+      stats: stats
     };
   } catch (error) {
     console.error(`Error obteniendo detalles de ${name}:`, error);
