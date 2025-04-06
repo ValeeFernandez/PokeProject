@@ -5,6 +5,8 @@ import { IonReactRouter } from '@ionic/react-router';
 /* IMPORTACIONES DE LAS PAG */
 import Home from './pages/Home';
 import NotFound from './pages/NotFound/NotFound';
+import PokeSearch from './pages/PokeSearch/PokeSearch';
+import PokemonDetailCard from './components/Poke/PokemonDetailCard';
 
 
 /* Core CSS required for Ionic components to work properly */
@@ -51,6 +53,10 @@ const App: React.FC = () => (
         <Route>
           <NotFound />
         </Route>
+        <Route>
+          <PokeSearch/>
+        </Route>
+        <Route path="/details/:name" component={PokemonDetailCard} exact />
       </IonRouterOutlet>
     </IonReactRouter>
   </IonApp>
