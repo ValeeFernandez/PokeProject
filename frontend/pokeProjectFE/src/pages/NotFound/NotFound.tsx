@@ -3,7 +3,6 @@ import './NotFound.css';
 import { IonButton } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 
-import Home from '../Home';
 
 const NotFound: React.FC = () => {
   const history = useHistory();
