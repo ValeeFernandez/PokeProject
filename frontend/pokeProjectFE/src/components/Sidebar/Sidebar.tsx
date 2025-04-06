@@ -21,10 +21,11 @@ const Sidebar: React.FC = () => {
       </IonHeader>
       <IonContent className='pokemon-content'>
         <IonList className='pokemon-list'>
-          <IonItem button className="pokemon-button">
+           <IonItem button routerLink="/pokeSearch" className="pokemon-button">
             <span className="pokemon-arrow">▶ </span>
-            <IonLabel>Poke Búsqueda</IonLabel>
-          </IonItem>
+            <IonLabel>Busqueda Pokemon</IonLabel>
+           </IonItem>
+
           <IonItem button className="pokemon-button">
             <span className="pokemon-arrow">▶ </span>
             <IonLabel>Comparar Pokémons</IonLabel>
