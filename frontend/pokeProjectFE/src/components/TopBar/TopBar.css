@@ -1,0 +1,28 @@
+/* src/components/TopBar/TopBar.css */
+.menu-icon {
+    font-size: 50px !important; /* El !important asegura que prevalezca sobre otros estilos */
+    color: #4A7C99;
+    margin: 10px;
+  }
+  
+  .title-container {
+    position: relative;
+    left: 0;
+    right: 15px;
+    text-align: center;
+    pointer-events: none;
+    margin-top: 10px;
+  }
+  
+  .pokemon-title {
+    color: #4A7C99;
+    display: inline-block;
+    pointer-events: auto;
+    font-size: 3rem;
+  }
+  
+  .pokemon-logo {
+    height: 60px;
+    margin-right: 20px;
+    margin: 10px;
+  }
