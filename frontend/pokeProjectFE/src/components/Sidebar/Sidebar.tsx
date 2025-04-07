@@ -21,7 +21,7 @@ const Sidebar: React.FC = () => {
       </IonHeader>
       <IonContent className='pokemon-content'>
         <IonList className='pokemon-list'>
-           <IonItem button routerLink="/pokeSearch" className="pokemon-button">
+           <IonItem button routerLink="/search" className="pokemon-button">
             <span className="pokemon-arrow">▶ </span>
             <IonLabel>Busqueda Pokemon</IonLabel>
            </IonItem>

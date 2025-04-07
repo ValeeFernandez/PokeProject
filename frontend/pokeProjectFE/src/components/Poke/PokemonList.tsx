@@ -1,57 +1,131 @@
 import { 
-    IonList, IonItem, IonImg, IonLabel, IonButtons, 
-    IonButton, IonSkeletonText, IonBadge, IonNote,
-    IonContent, IonSearchbar, IonToolbar
-  } from '@ionic/react';
-  import { fetchPokemonList, searchPokemon } from '../../services/PokemonService';
-  import { useState, useEffect, useRef, useCallback } from 'react';
-  
-  interface Pokemon {
-    id: number;
+  IonCard, IonCardContent, IonImg, IonBadge, IonNote, IonContent, 
+  IonSearchbar, IonToolbar, IonSkeletonText, IonButton, IonIcon 
+} from '@ionic/react';
+import { fetchPokemonList, searchPokemon } from '../../services/PokemonService';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { star, starOutline } from 'ionicons/icons';
+import { useHistory } from 'react-router-dom';
+import './PokemonList.css';
+
+interface Pokemon {
+  id: number;
+  name: string;
+  sprite: string;
+  url: string;
+  types?: string[];
+  height?: number;
+  weight?: number;
+  abilities?: string[];
+  stats?: {
     name: string;
-    sprite: string;
-    url: string; // ← Añadido 'url' para que coincida con PokemonDetails
-    types?: string[];
-    height?: number;
-    weight?: number;
-    abilities?: string[];
-    stats?: {
-      name: string;
-      base: number;
-    }[];
-  }
-  
-  interface PokemonListProps {
-    onListLoaded?: (list: Pokemon[]) => void;
-    showCompareButton?: boolean;
-    onPokemonSelected?: (pokemon: Pokemon) => void;
-  }
-  
-  const PokemonList: React.FC<PokemonListProps> = ({ 
-    onListLoaded, 
-    showCompareButton = false,
-    onPokemonSelected 
-  }) => {
-    const [pokemonList, setPokemonList] = useState<Pokemon[]>([]);
-    const [filteredList, setFilteredList] = useState<Pokemon[]>([]);
-    const [offset, setOffset] = useState(0);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [searchText, setSearchText] = useState('');
-    const [isSearching, setIsSearching] = useState(false);
-    const limit = 10;
-    const searchTimeout = useRef<NodeJS.Timeout | null>(null);
-  
-    const loadPokemons = useCallback(async (newOffset: number) => {
-      setLoading(true);
-      setError('');
+    base: number;
+  }[];
+}
+
+interface PokemonListProps {
+  onListLoaded?: (list: Pokemon[]) => void;
+  showCompareButton?: boolean;
+  onPokemonSelected?: (pokemon: Pokemon) => void;
+}
+
+const PokemonList: React.FC<PokemonListProps> = ({ 
+  onListLoaded, 
+  showCompareButton = false,
+  onPokemonSelected 
+}) => {
+  const [pokemonList, setPokemonList] = useState<Pokemon[]>([]);
+  const [filteredList, setFilteredList] = useState<Pokemon[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [favorites, setFavorites] = useState<number[]>([]);
+  const limit = 16;
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const history = useHistory();
+
+  // Cargar favoritos desde localStorage al iniciar
+  useEffect(() => {
+    const savedFavorites = localStorage.getItem('pokemonFavorites');
+    if (savedFavorites) {
+      setFavorites(JSON.parse(savedFavorites));
+    }
+  }, []);
+
+  const toggleFavorite = (pokemonId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setFavorites(prevFavorites => {
+      let newFavorites;
+      if (prevFavorites.includes(pokemonId)) {
+        newFavorites = prevFavorites.filter(id => id !== pokemonId);
+      } else {
+        newFavorites = [...prevFavorites, pokemonId];
+      }
+      localStorage.setItem('pokemonFavorites', JSON.stringify(newFavorites));
+      return newFavorites;
+    });
+  };
+
+  const loadPokemons = useCallback(async (newOffset: number) => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await fetchPokemonList(limit, newOffset);
+      const formattedList = data.pokemon.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        sprite: p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`,
+        url: p.url || '',
+        types: p.types || [],
+        height: p.height,
+        weight: p.weight,
+        abilities: p.abilities || [],
+        stats: p.stats || []
+      }));
+      
+      setPokemonList(formattedList);
+      setFilteredList(formattedList);
+      
+      if (onListLoaded) {
+        onListLoaded(formattedList);
+      }
+    } catch (err) {
+      console.error("Error loading Pokémon:", err);
+      setError('Error al cargar Pokémon');
+      setPokemonList([]);
+      setFilteredList([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [onListLoaded]);
+
+  const handleSearch = useCallback(async (query: string) => {
+    setSearchText(query);
+    
+    if (searchTimeout.current) {
+      clearTimeout(searchTimeout.current);
+    }
+
+    if (!query.trim()) {
+      setIsSearching(false);
+      setFilteredList(pokemonList);
+      return;
+    }
+
+    setIsSearching(true);
+    setLoading(true);
+
+    searchTimeout.current = setTimeout(async () => {
       try {
-        const data = await fetchPokemonList(limit, newOffset);
-        const formattedList = data.pokemon.map((p: any) => ({
+        const results = await searchPokemon(query);
+        const formattedResults = results.map((p: any) => ({
           id: p.id,
           name: p.name,
           sprite: p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`,
-          url: p.url || '', // ← Añadido 'url' en el formato
+          url: p.url || '',
           types: p.types || [],
           height: p.height,
           weight: p.weight,
@@ -59,184 +133,165 @@ import {
           stats: p.stats || []
         }));
         
-        setPokemonList(formattedList);
-        setFilteredList(formattedList);
-        
-        if (onListLoaded) {
-          onListLoaded(formattedList);
-        }
+        setFilteredList(formattedResults);
       } catch (err) {
-        console.error("Error loading Pokémon:", err);
-        setError('Error al cargar Pokémon');
-        setPokemonList([]);
+        console.error("Error searching Pokémon:", err);
+        setError('Error al buscar Pokémon');
         setFilteredList([]);
       } finally {
         setLoading(false);
       }
-    }, [onListLoaded]);
-  
-    const handleSearch = useCallback(async (query: string) => {
-      setSearchText(query);
-      
+    }, 500);
+  }, [pokemonList]);
+
+  useEffect(() => {
+    loadPokemons(offset);
+    return () => {
       if (searchTimeout.current) {
         clearTimeout(searchTimeout.current);
       }
-  
-      if (!query.trim()) {
-        setIsSearching(false);
-        setFilteredList(pokemonList);
-        return;
-      }
-  
-      setIsSearching(true);
-      setLoading(true);
-  
-      searchTimeout.current = setTimeout(async () => {
-        try {
-          const results = await searchPokemon(query);
-          const formattedResults = results.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            sprite: p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`,
-            url: p.url || '', // ← Añadido 'url' en el formato
-            types: p.types || [],
-            height: p.height,
-            weight: p.weight,
-            abilities: p.abilities || [],
-            stats: p.stats || []
-          }));
-          
-          setFilteredList(formattedResults);
-        } catch (err) {
-          console.error("Error searching Pokémon:", err);
-          setError('Error al buscar Pokémon');
-          setFilteredList([]);
-        } finally {
-          setLoading(false);
-        }
-      }, 500);
-    }, [pokemonList]);
-  
-    useEffect(() => {
-      loadPokemons(offset);
-      return () => {
-        if (searchTimeout.current) {
-          clearTimeout(searchTimeout.current);
-        }
-      };
-    }, [offset, loadPokemons]);
-  
-    const handlePokemonClick = (pokemon: Pokemon) => {
-      if (onPokemonSelected) {
-        onPokemonSelected(pokemon);
-      }
     };
-  
-    return (
-      <IonContent>
-        <IonToolbar>
-          <IonSearchbar
-            value={searchText}
-            onIonInput={(e) => handleSearch(e.detail.value!)}
-            debounce={500}
-            placeholder="Buscar Pokémon por nombre o número"
-            animated
-          />
-        </IonToolbar>
-  
-        {loading && (
-          <IonList>
-            {[...Array(limit)].map((_, index) => (
-              <IonItem key={`skeleton-${index}`}>
+  }, [offset, loadPokemons]);
+
+  const handlePokemonClick = (pokemon: Pokemon) => {
+    if (onPokemonSelected) {
+      onPokemonSelected(pokemon);
+    }
+    if (!showCompareButton) {
+      history.push(`/details/${pokemon.name}`);
+    }
+  };
+
+  return (
+    <IonContent className="pokemon-grid">
+      <IonToolbar>
+        <IonSearchbar
+          value={searchText}
+          onIonInput={(e) => handleSearch(e.detail.value!)}
+          placeholder="Buscar Pokémon por nombre o número"
+          animated
+          className="pokemon-searchbar"
+        />
+      </IonToolbar>
+
+      {loading && (
+        <div className="pokemon-grid-container">
+          {[...Array(16)].map((_, i) => (
+            <IonCard key={`skeleton-${i}`} className="pokemon-card">
+              <IonCardContent className="pokemon-card-content">
+                <IonSkeletonText animated style={{ width: '60%', height: '16px' }} />
                 <IonSkeletonText 
                   animated 
-                  style={{ width: '50px', height: '50px' }} 
-                  slot="start"
+                  style={{ 
+                    width: '100px', 
+                    height: '100px', 
+                    margin: '12px auto',
+                    borderRadius: '50%'
+                  }} 
                 />
-                <IonLabel>
-                  <h3><IonSkeletonText animated style={{ width: '80%' }} /></h3>
-                  <p><IonSkeletonText animated style={{ width: '60%' }} /></p>
-                </IonLabel>
-              </IonItem>
-            ))}
-          </IonList>
-        )}
-  
-        {error && !loading && (
-          <div className="ion-padding ion-text-center">
-            <IonNote color="danger">{error}</IonNote>
-            <IonButton 
-              onClick={() => isSearching ? handleSearch(searchText) : loadPokemons(offset)}
-              fill="clear"
-              size="small"
-            >
-              Reintentar
-            </IonButton>
-          </div>
-        )}
-  
-        {!loading && !error && (
-          <>
-            <IonList lines="full">
-              {filteredList.map((pokemon) => (
-                <IonItem 
-                  key={pokemon.id} 
+                <IonSkeletonText animated style={{ width: '80%', height: '20px', margin: '12px auto' }} />
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '12px' }}>
+                  <IonSkeletonText animated style={{ width: '50px', height: '20px' }} />
+                </div>
+              </IonCardContent>
+            </IonCard>
+          ))}
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="ion-padding ion-text-center">
+          <IonNote color="danger">{error}</IonNote>
+          <IonButton 
+            onClick={() => isSearching ? handleSearch(searchText) : loadPokemons(offset)}
+            fill="clear"
+            size="small"
+          >
+            Reintentar
+          </IonButton>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <>
+          <div className="pokemon-grid-container">
+            {filteredList.map((pokemon) => (
+              <IonCard 
+                key={pokemon.id}
+                className="pokemon-card"
+                button={false}
+              >
+                <div className="favorite-button-container">
+                  <IonButton 
+                    fill="clear" 
+                    className="favorite-button"
+                    onClick={(e) => toggleFavorite(pokemon.id, e)}
+                  >
+                    <IonIcon 
+                      icon={favorites.includes(pokemon.id) ? star : starOutline} 
+                      color={favorites.includes(pokemon.id) ? 'warning' : 'medium'}
+                      style={{ fontSize: '24px' }}
+                    />
+                  </IonButton>
+                </div>
+                
+                <div 
+                  className="pokemon-card-content-wrapper"
                   onClick={() => handlePokemonClick(pokemon)}
-                  routerLink={!showCompareButton ? `/details/${pokemon.name}` : undefined}
-                  button={showCompareButton}
-                  detail={showCompareButton}
                 >
-                  <IonImg 
-                    src={pokemon.sprite}
-                    slot="start" 
-                    style={{ width: '50px', height: '50px' }} 
-                    alt={`${pokemon.name} sprite`}
-                  />
-                  <IonLabel>
-                    <h2>{pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1)}</h2>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                      {pokemon.types?.map((type, index) => (
-                        <IonBadge 
-                          key={`${type}-${index}`} 
+                  <IonCardContent className="pokemon-card-content">
+                    <div className="pokemon-number">
+                      N° {pokemon.id.toString().padStart(4, '0')}
+                    </div>
+                    <IonImg 
+                      src={pokemon.sprite}
+                      className="pokemon-sprite"
+                      alt={`${pokemon.name} sprite`}
+                    />
+                    <h2 className="pokemon-name">
+                      {pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1)}
+                    </h2>
+                    <div className="pokemon-types">
+                      {pokemon.types?.map((type) => (
+                        <IonBadge
+                          key={`${pokemon.id}-${type}`}
+                          className="pokemon-type-badge"
                           color={`pokemon-${type}` as any}
-                          style={{ textTransform: 'capitalize' }}
                         >
                           {type}
                         </IonBadge>
                       ))}
                     </div>
-                  </IonLabel>
-                  <IonNote slot="end">#{pokemon.id.toString().padStart(3, '0')}</IonNote>
-                </IonItem>
-              ))}
-            </IonList>
-  
-            {!isSearching && (
-              <div className="ion-padding" style={{ display: 'flex', justifyContent: 'center' }}>
-                <IonButtons>
-                  <IonButton 
-                    onClick={() => setOffset(prev => Math.max(0, prev - limit))} 
-                    disabled={offset === 0 || loading}
-                    fill="outline"
-                  >
-                    Anterior
-                  </IonButton>
-                  <IonButton 
-                    onClick={() => setOffset(prev => prev + limit)}
-                    disabled={loading}
-                    fill="outline"
-                  >
-                    Siguiente
-                  </IonButton>
-                </IonButtons>
-              </div>
-            )}
-          </>
-        )}
-      </IonContent>
-    );
-  };
-  
-  
-  export default PokemonList;
-  
+                  </IonCardContent>
+                </div>
+              </IonCard>
+            ))}
+          </div>
+
+          {!isSearching && filteredList.length > 0 && (
+            <div className="pagination-container">
+              <IonButton 
+                className="pagination-button"
+                onClick={() => setOffset(prev => Math.max(0, prev - limit))} 
+                disabled={offset === 0 || loading}
+                fill="solid"
+              >
+                ANTERIOR
+              </IonButton>
+              <IonButton 
+                className="pagination-button"
+                onClick={() => setOffset(prev => prev + limit)}
+                disabled={loading}
+                fill="solid"
+              >
+                SIGUIENTE
+              </IonButton>
+            </div>
+          )}
+        </>
+      )}
+    </IonContent>
+  );
+};
+
+export default PokemonList;
