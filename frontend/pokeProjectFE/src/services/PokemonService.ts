@@ -117,15 +117,37 @@ export const searchPokemon = async (query: string): Promise<PokemonDetails[]> =>
  */
 export const fetchPokemonList = async (limit: number = 10, offset: number = 0): Promise<PokemonListResponse> => {
   try {
+    // 1. Obtener lista básica
     const response = await axios.get(`${API_URL}?limit=${limit}&offset=${offset}`);
+    
+    // 2. Obtener detalles completos (incluyendo tipos) para cada Pokémon
+    const detailedPokemon = await Promise.all(
+      response.data.pokemon.map(async (p: any) => {
+        try {
+          const details = await fetchPokemonDetails(p.name);
+          return {
+            id: details.id,
+            name: details.name,
+            url: p.url || `${API_URL}/${p.name}`,
+            sprite: details.sprite,
+            types: details.types // Añadimos los tipos aquí
+          };
+        } catch (error) {
+          console.error(`Error fetching details for ${p.name}:`, error);
+          return {
+            id: p.id,
+            name: p.name,
+            url: p.url || `${API_URL}/${p.name}`,
+            sprite: p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`,
+            types: [] // Tipo vacío como fallback
+          };
+        }
+      })
+    );
+
     return {
       count: response.data.count,
-      pokemon: response.data.pokemon.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        url: p.url || `${API_URL}/${p.name}`,
-        sprite: p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`
-      }))
+      pokemon: detailedPokemon
     };
   } catch (error) {
     console.error('Error obteniendo lista de Pokémon:', error);

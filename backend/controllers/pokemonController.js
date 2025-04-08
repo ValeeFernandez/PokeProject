@@ -63,4 +63,35 @@ const getPokemonAbilities = async (req, res) => {
     }
 };
 
-module.exports = { getPokemon, getPokemonList, getPokemonAbilities };
+// Obtener los tipos de un Pokémon
+const getPokemonTypes = async (req, res) => {
+    try {
+      const { name } = req.params;
+      
+      if (!name) {
+        return res.status(400).json({ error: "Se requiere nombre o ID de Pokémon" });
+      }
+  
+      const response = await axios.get(`${BASE_URL}/${name.toLowerCase()}`);
+      
+      const types = response.data.types.map(t => ({
+        slot: t.slot,
+        name: t.type.name,
+        url: t.type.url
+      }));
+  
+      res.json({
+        id: response.data.id,
+        name: response.data.name,
+        types
+      });
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return res.status(404).json({ error: "Pokémon no encontrado" });
+      }
+      console.error("Error fetching Pokémon types:", error);
+      res.status(500).json({ error: "Error interno del servidor" });
+    }
+  };
+
+module.exports = { getPokemon, getPokemonList, getPokemonAbilities, getPokemonTypes };

@@ -13,7 +13,7 @@ interface Pokemon {
   name: string;
   sprite: string;
   url: string;
-  types?: string[];
+  types: string[];
   height?: number;
   weight?: number;
   abilities?: string[];
@@ -183,8 +183,8 @@ const PokemonList: React.FC<PokemonListProps> = ({
                 <IonSkeletonText 
                   animated 
                   style={{ 
-                    width: '100px', 
-                    height: '100px', 
+                    width: '100%', 
+                    height: '100%', 
                     margin: '12px auto',
                     borderRadius: '50%'
                   }} 
@@ -216,55 +216,56 @@ const PokemonList: React.FC<PokemonListProps> = ({
         <>
           <div className="pokemon-grid-container">
             {filteredList.map((pokemon) => (
-              <IonCard 
-                key={pokemon.id}
-                className="pokemon-card"
-                button={false}
-              >
-                <div className="favorite-button-container">
-                  <IonButton 
-                    fill="clear" 
-                    className="favorite-button"
-                    onClick={(e) => toggleFavorite(pokemon.id, e)}
-                  >
-                    <IonIcon 
-                      icon={favorites.includes(pokemon.id) ? star : starOutline} 
-                      color={favorites.includes(pokemon.id) ? 'warning' : 'medium'}
-                      style={{ fontSize: '24px' }}
-                    />
-                  </IonButton>
-                </div>
-                
-                <div 
-                  className="pokemon-card-content-wrapper"
-                  onClick={() => handlePokemonClick(pokemon)}
+           <IonCard 
+           key={pokemon.id}
+           className="pokemon-card"
+           button={false}
+         >
+           <div className="pokemon-card-header">
+             <div className="pokemon-number">
+               N° {pokemon.id.toString().padStart(4, '0')}
+             </div>
+             <IonButton 
+               fill="clear" 
+               className="favorite-button"
+               onClick={(e) => toggleFavorite(pokemon.id, e)}
+             >
+               <IonIcon 
+                 icon={favorites.includes(pokemon.id) ? star : starOutline} 
+                 color={favorites.includes(pokemon.id) ? 'warning' : 'medium'}
+               />
+             </IonButton>
+           </div>
+           
+           <div className="pokemon-card-content-wrapper" onClick={() => handlePokemonClick(pokemon)}>
+             <IonCardContent className="pokemon-card-content">
+             <div className="pokemon-image-container">
+  <div className="pokemon-image-frame">
+    <IonImg 
+      src={pokemon.sprite}
+      className="pokemon-sprite"
+      alt={`${pokemon.name} sprite`}
+    />
+  </div>
+</div>
+               <div className="pokemon-name-container">
+                 {pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1)}
+               </div>
+               
+               {/* Mostrar todos los tipos del Pokémon */}
+               <div className="pokemon-types-container">
+                 {pokemon.types.map((type, index) => (
+                  <div 
+                  key={index}
+                  className={`pokemon-type-badge type-${type.toLowerCase()}`}
                 >
-                  <IonCardContent className="pokemon-card-content">
-                    <div className="pokemon-number">
-                      N° {pokemon.id.toString().padStart(4, '0')}
-                    </div>
-                    <IonImg 
-                      src={pokemon.sprite}
-                      className="pokemon-sprite"
-                      alt={`${pokemon.name} sprite`}
-                    />
-                    <h2 className="pokemon-name">
-                      {pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1)}
-                    </h2>
-                    <div className="pokemon-types">
-                      {pokemon.types?.map((type) => (
-                        <IonBadge
-                          key={`${pokemon.id}-${type}`}
-                          className="pokemon-type-badge"
-                          color={`pokemon-${type}` as any}
-                        >
-                          {type}
-                        </IonBadge>
-                      ))}
-                    </div>
-                  </IonCardContent>
+                  {type.toUpperCase()}
                 </div>
-              </IonCard>
+                 ))}
+               </div>
+             </IonCardContent>
+           </div>
+         </IonCard>
             ))}
           </div>
 

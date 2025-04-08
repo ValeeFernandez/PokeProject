@@ -1,4 +1,7 @@
 /* src/components/TopBar/TopBar.css */
+ion-header{
+  background: var(--ion-background-color);
+}
 .menu-icon {
     font-size: 50px !important; /* El !important asegura que prevalezca sobre otros estilos */
     color: #4A7C99;
