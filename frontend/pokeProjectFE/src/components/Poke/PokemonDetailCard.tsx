@@ -20,6 +20,7 @@ import {
 } from '@ionic/react';
 import TopBar from '../TopBar/TopBar';
 import Sidebar from '../Sidebar/Sidebar';
+import { fetchPokemonDetails, getFromCache } from '../../services/PokemonService';
 import './PokeDetail.css';
 
 interface PokemonData {
@@ -78,29 +79,22 @@ const PokeDetails: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${name.toLowerCase()}`);
-        const data = await response.json();
-
-        const pokemonData: PokemonData = {
+        const data = await fetchPokemonDetails(name); // Usa tu servicio
+        setPokemon({
           id: data.id,
           name: data.name,
           height: data.height,
           weight: data.weight,
-          types: data.types.map((t: any) => t.type.name),
-          sprite: data.sprites.other['official-artwork'].front_default || data.sprites.front_default,
-          abilities: data.abilities.map((a: any) => a.ability.name),
-          stats: data.stats.map((stat: any) => ({
-            name: stat.stat.name,
-            base: stat.base_stat
-          }))
-        };
-
-        setPokemon(pokemonData);
+          types: data.types,
+          sprite: data.sprite,
+          abilities: data.abilities,
+          stats: data.stats
+        });
       } catch (err) {
         setError("Error al cargar los datos del Pokémon");
       }
     };
-
+  
     fetchData();
   }, [name]);
 
