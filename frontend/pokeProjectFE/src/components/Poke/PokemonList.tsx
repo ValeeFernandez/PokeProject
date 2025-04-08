@@ -1,5 +1,5 @@
 import { 
-  IonCard, IonCardContent, IonImg, IonBadge, IonNote, IonContent, 
+  IonCard, IonCardContent, IonImg, IonNote, IonContent, 
   IonSearchbar, IonToolbar, IonSkeletonText, IonButton, IonIcon 
 } from '@ionic/react';
 import { fetchPokemonList, searchPokemon } from '../../services/PokemonService';

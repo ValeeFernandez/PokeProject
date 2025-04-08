@@ -7,6 +7,7 @@ import Home from './pages/Home';
 import NotFound from './pages/NotFound/NotFound';
 import PokeSearch from './pages/PokeSearch/PokeSearch';
 import PokemonDetailCard from './components/Poke/PokemonDetailCard';
+import Favorites from './pages/favorites/favorites';
 
 
 /* Core CSS required for Ionic components to work properly */
@@ -38,6 +39,7 @@ import '@ionic/react/css/display.css';
 /* Theme variables */
 import './theme/variables.css';
 
+
 setupIonicReact();
 
 const App: React.FC = () => (
@@ -55,6 +57,9 @@ const App: React.FC = () => (
       <PokeSearch />
     </Route>
     <Route exact path="/details/:name" component={PokemonDetailCard} />
+    <Route exact path="/favorites">
+      <Favorites />
+    </Route>
     <Route path="*">
       <NotFound />
     </Route>

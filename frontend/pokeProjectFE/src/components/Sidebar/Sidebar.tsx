@@ -30,7 +30,7 @@ const Sidebar: React.FC = () => {
             <span className="pokemon-arrow">▶ </span>
             <IonLabel>Comparar Pokémons</IonLabel>
           </IonItem>
-          <IonItem button className="pokemon-button">
+          <IonItem button routerLink='/favorites' className="pokemon-button">
             <span className="pokemon-arrow">▶ </span>
             <IonLabel>Favoritos</IonLabel>
           </IonItem>
