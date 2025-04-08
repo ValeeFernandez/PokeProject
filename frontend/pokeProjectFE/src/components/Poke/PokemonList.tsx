@@ -1,8 +1,6 @@
-
 import { 
   IonCard, IonCardContent, IonImg, IonNote, IonContent, 
   IonSearchbar, IonToolbar, IonSkeletonText, IonButton, IonIcon 
-
 } from '@ionic/react';
 import { fetchPokemonList, searchPokemon } from '../../services/PokemonService';
 import { useState, useEffect, useRef, useCallback } from 'react';
