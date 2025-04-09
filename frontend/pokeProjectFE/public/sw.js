@@ -1,5 +1,5 @@
-const CACHE_NAME = 'pokeapp-v2';
-const API_CACHE_NAME = 'pokeapp-api-v1';
+const CACHE_NAME = 'pokeapp-v4';
+const API_CACHE_NAME = 'pokeapp-api-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -7,62 +7,86 @@ const ASSETS_TO_CACHE = [
   '/manifest.json',
   '/assets/pikachuError.jpg',
   '/assets/pokemon.jpg',
-  '/assets/video1.mp4',
-  '/assets/video2.mp4',
-  // Agrega más assets estáticos según necesites
+  '/assets/Video1.mp4',
+  '/assets/flace1.jpg',
+  '/assets/flace2.jpg',
+  '/assets/flace3.png',
+  '/assets/flace4.png',
+  '/assets/pikachu.png'
 ];
 
-// Al instalar, precacheamos los assets esenciales
+// ==================== INSTALACIÓN ====================
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => {
-      console.log('Assets precacheados correctamente');
-      return self.skipWaiting();
-    })
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      console.log('Service Worker instalándose...');
+      
+      // Cachear assets con manejo de errores individual
+      const cachePromises = ASSETS_TO_CACHE.map(async (asset) => {
+        try {
+          await cache.add(asset);
+        } catch (error) {
+          console.warn(`No se pudo cachear ${asset}:`, error);
+        }
+      });
+      
+      await Promise.all(cachePromises);
+      console.log(`Instalación completada con ${(await cache.keys()).length} items en caché`);
+      
+      // Activar el SW inmediatamente
+      await self.skipWaiting();
+    })()
   );
 });
 
-// Activar: limpiar caches viejos
+// ==================== ACTIVACIÓN ====================
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME && cacheName !== API_CACHE_NAME) {
-            console.log('Eliminando cache antiguo:', cacheName);
-            return caches.delete(cacheName);
+    (async () => {
+      console.log('Service Worker activándose...');
+      
+      // Limpiar caches antiguos
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames.map(async (cacheName) => {
+          if (![CACHE_NAME, API_CACHE_NAME].includes(cacheName)) {
+            console.log('Eliminando cache obsoleto:', cacheName);
+            await caches.delete(cacheName);
           }
         })
       );
-    }).then(() => {
-      console.log('Service Worker activado y caches limpiados');
-      return self.clients.claim();
-    })
+      
+      // Tomar control de todos los clients
+      await self.clients.claim();
+      console.log('Service Worker activado y listo');
+    })()
   );
 });
 
-// Estrategia de caché para la API
+// ==================== ESTRATEGIAS DE CACHÉ ====================
+
+// Estrategia para API: Network First, luego Cache
 const handleApiRequest = async (request) => {
-  const isOnline = navigator.onLine;
+  const cacheKey = request.url;
+  const cache = await caches.open(API_CACHE_NAME);
   
   try {
-    // 1. Si hay conexión, intentar la red primero
-    if (isOnline) {
+    // 1. Intentar red primero si hay conexión
+    if (navigator.onLine) {
       const networkResponse = await fetch(request);
       
       if (networkResponse.ok) {
-        const data = await networkResponse.clone().json();
+        // Clonar la respuesta para cachearla
+        const responseToCache = networkResponse.clone();
         
-        // Asegurarse de que los datos tengan la estructura correcta
-        if (data && !data.name) {
-          data.name = `Pokémon ${data.id}`; // Valor por defecto si falta el nombre
+        // Normalizar datos antes de cachear
+        const data = await responseToCache.json();
+        if (data && !data.name && data.id) {
+          data.name = `Pokémon ${data.id}`;
         }
         
-        // Guardar en caché la respuesta normalizada
-        const cache = await caches.open(API_CACHE_NAME);
-        await cache.put(request, new Response(JSON.stringify(data), {
+        await cache.put(cacheKey, new Response(JSON.stringify(data), {
           headers: { 'Content-Type': 'application/json' }
         }));
         
@@ -70,13 +94,13 @@ const handleApiRequest = async (request) => {
       }
     }
 
-    // 2. Si estamos offline, buscar en caché
-    const cachedResponse = await caches.match(request);
+    // 2. Buscar en caché
+    const cachedResponse = await cache.match(cacheKey);
     if (cachedResponse) {
       const data = await cachedResponse.json();
       
-      // Si los datos cacheados no tienen nombre, agregar uno por defecto
-      if (data && !data.name) {
+      // Verificar integridad de datos cacheados
+      if (!data.name && data.id) {
         data.name = `Pokémon ${data.id}`;
         return new Response(JSON.stringify(data), {
           headers: { 'Content-Type': 'application/json' }
@@ -86,147 +110,173 @@ const handleApiRequest = async (request) => {
       return cachedResponse;
     }
 
-    // 3. Si no hay caché, devolver un fallback con datos básicos
-    const url = new URL(request.url);
-    const pokemonId = url.pathname.split('/').pop(); // Extraer ID de la URL
-    
-    return new Response(
-      JSON.stringify({
-        id: pokemonId,
-        name: `Pokémon ${pokemonId}`,
-        sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonId}.png`,
-        types: [],
-        __stale: true // Marcar como datos de respaldo
-      }),
-      { headers: { 'Content-Type': 'application/json' } }
-    );
+    // 3. Fallback estructurado
+    const pokemonId = new URL(request.url).pathname.split('/').pop();
+    return new Response(JSON.stringify({
+      id: pokemonId,
+      name: `Pokémon ${pokemonId}`,
+      sprite: '/assets/pikachuError.jpg',
+      types: [],
+      stats: [],
+      abilities: [],
+      __fallback: true
+    }), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 200
+    });
+
   } catch (error) {
     console.error('Error en handleApiRequest:', error);
-    return new Response(
-      JSON.stringify({ error: "server_error", message: "Error del servidor" }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-};
-
-// Estrategia para HTML (App Shell)
-const handleHtmlRequest = async (request) => {
-  try {
-    // Intentamos primero la red
-    const networkResponse = await fetch(request);
-    
-    // Si es una respuesta válida, la cacheamos
-    if (networkResponse.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.put(request, networkResponse.clone());
-      return networkResponse;
-    }
-    
-    // Si falla, devolvemos el index.html del caché
-    const cachedResponse = await caches.match('/index.html');
-    if (cachedResponse) {
-      return cachedResponse;
-    }
-    
-    // Como último recurso, devolvemos la respuesta de red
-    return networkResponse;
-  } catch (error) {
-    console.log('Error de red, devolviendo index.html del caché:', error);
-    const cachedResponse = await caches.match('/index.html');
-    if (cachedResponse) {
-      return cachedResponse;
-    }
-    
-    // Respuesta de fallback muy básica
-    return new Response('<h1>PokeApp Offline</h1>', {
-      headers: { 'Content-Type': 'text/html' }
+    return new Response(JSON.stringify({
+      error: "network_error",
+      message: "No se pudo conectar al servidor"
+    }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 };
 
-// Estrategia para assets estáticos (Cache First)
+// Estrategia para HTML: Network First, luego Cache
+const handleHtmlRequest = async (request) => {
+  const cache = await caches.open(CACHE_NAME);
+  
+  try {
+    // 1. Intentar red primero
+    const networkResponse = await fetch(request);
+    
+    if (networkResponse.ok) {
+      // Actualizar caché en background
+      cache.put(request, networkResponse.clone());
+      return networkResponse;
+    }
+    
+    throw new Error('Respuesta de red no OK');
+  } catch (error) {
+    console.log('Usando caché para HTML:', error);
+    
+    // 2. Buscar en caché
+    const cachedResponse = await cache.match(request) || 
+                          await cache.match('/index.html');
+    
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+    
+    // 3. Fallback básico
+    return new Response(
+      '<h1>PokeApp Offline</h1><p>La aplicación no está disponible sin conexión</p>',
+      { headers: { 'Content-Type': 'text/html' } }
+    );
+  }
+};
+
+// Estrategia para assets estáticos: Cache First, luego Network
 const handleStaticRequest = async (request) => {
+  // Ignorar URLs de desarrollo de Vite
+  const url = new URL(request.url);
+  if (url.href.includes('__vite_ping') || 
+      url.href.includes('sockjs-node') ||
+      url.href.includes('hot-update')) {
+    return fetch(request);
+  }
+
+  // 1. Buscar en caché primero
   const cachedResponse = await caches.match(request);
   if (cachedResponse) {
     return cachedResponse;
   }
-  
+
   try {
+    // 2. Intentar red
     const networkResponse = await fetch(request);
+    
     if (networkResponse.ok) {
+      // Cachear para futuras solicitudes
       const cache = await caches.open(CACHE_NAME);
       await cache.put(request, networkResponse.clone());
     }
+    
     return networkResponse;
   } catch (error) {
-    console.log('Error al cargar recurso estático:', error);
+    console.log('Error al cargar recurso estático:', request.url);
     
-    // Intentamos devolver un fallback según el tipo de recurso
-    const url = new URL(request.url);
-    
-    if (url.pathname.endsWith('.jpg') || url.pathname.endsWith('.png')) {
+    // 3. Fallbacks específicos
+    if (request.url.match(/\.(jpg|png|jpeg|gif|webp)$/i)) {
       return caches.match('/assets/pikachuError.jpg');
     }
     
-    if (url.pathname.endsWith('.css')) {
-      return new Response('', { headers: { 'Content-Type': 'text/css' }});
+    if (request.url.match(/\.css$/i)) {
+      return new Response('', { headers: { 'Content-Type': 'text/css' } });
     }
     
-    if (url.pathname.endsWith('.js')) {
+    if (request.url.match(/\.js$/i)) {
       return new Response('console.log("Recurso no disponible offline");', {
         headers: { 'Content-Type': 'application/javascript' }
       });
     }
     
-    return new Response('Recurso no disponible offline', {
-      status: 404,
-      headers: { 'Content-Type': 'text/plain' }
-    });
+    return new Response('', { status: 404 });
   }
 };
 
-// Manejador principal de fetch
+// ==================== MANEJADOR PRINCIPAL ====================
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  const requestUrl = new URL(request.url);
-  
-  // Ignorar solicitudes que no sean GET
+  const url = new URL(request.url);
+
+  // Ignorar métodos que no sean GET
   if (request.method !== 'GET') return;
-  
-  // Ignorar solicitudes de extensiones de desarrollo
-  if (requestUrl.pathname.includes('__') || 
-      requestUrl.pathname.includes('hot-update') ||
-      requestUrl.pathname.includes('sockjs-node')) {
+
+  // Ignorar extensiones de desarrollo
+  if (url.pathname.includes('__') || url.href.includes('hot-update')) {
     return;
   }
-  
-  // Manejar solicitudes de API
-  if (requestUrl.pathname.startsWith('/api/')) {
+
+  // Routing de solicitudes
+  if (url.pathname.startsWith('/api/')) {
     event.respondWith(handleApiRequest(request));
-    return;
-  }
-  
-  // Manejar solicitudes de navegación (HTML)
-  if (request.headers.get('accept')?.includes('text/html')) {
+  } 
+  else if (request.headers.get('accept')?.includes('text/html')) {
     event.respondWith(handleHtmlRequest(request));
-    return;
+  } 
+  else {
+    event.respondWith(handleStaticRequest(request));
+  }
+});
+
+// ==================== COMUNICACIÓN Y SINCRONIZACIÓN ====================
+
+// Manejar mensajes desde la app
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+    self.clients.claim().then(() => {
+      console.log('Service Worker actualizado y tomando control');
+    });
   }
   
-  // Manejar assets estáticos
-  event.respondWith(handleStaticRequest(request));
-});
-
-// Manejar actualizaciones en segundo plano
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
+  if (event.data?.type === 'UPDATE_CACHE') {
+    console.log('Actualizando caché desde mensaje');
+    // Lógica para actualizar caché específica
   }
 });
 
-// Sincronización en segundo plano para actualizar caché
+// Sincronización en background
 self.addEventListener('sync', (event) => {
-  if (event.tag === 'updateApiCache') {
-    console.log('Sincronización en segundo plano para actualizar caché');
-    // Aquí podrías implementar lógica para actualizar datos importantes
+  if (event.tag === 'update-api-cache') {
+    console.log('Sincronizando caché de API en background');
+    // Lógica para actualizar datos importantes
   }
+});
+
+// Manejar notificaciones push
+self.addEventListener('push', (event) => {
+  const data = event.data?.json();
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'PokeApp', {
+      body: data.message || 'Nueva actualización disponible',
+      icon: '/assets/pikachu.png'
+    })
+  );
 });

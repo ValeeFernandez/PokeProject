@@ -4,6 +4,7 @@ import { useHistory } from 'react-router-dom';
 import FavoriteList from '../../components/Favorites/FavoriteList';
 import Sidebar from '../../components/Sidebar/Sidebar';
 import TopBar from '../../components/TopBar/TopBar';
+import Footer from '../../components/Footer/footer';
 
 const Favorites: React.FC = () => {
   const history = useHistory();
@@ -16,6 +17,8 @@ const Favorites: React.FC = () => {
         
         <IonContent fullscreen>
           <FavoriteList />
+
+          <Footer/>
         </IonContent>
       </IonPage>
     </>

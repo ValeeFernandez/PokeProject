@@ -7,7 +7,7 @@ import {
   IonSelect,
   IonSelectOption
 } from '@ionic/react';
-import './footer.css'; // Crearemos este archivo después
+import './footer.css'; 
 
 const Footer: React.FC = () => {
   return (
@@ -15,63 +15,47 @@ const Footer: React.FC = () => {
       <div className="footer-content">
         {/* Primera columna */}
         <div className="footer-section">
-          <h3>CATEGORIES</h3>
+          <h3>CATEGORIAS</h3>
           <ul>
-            <li>GIFT CARDS (BUYATAB)</li>
-            <li>NEW RELEASES</li>
-            <li>PLUSH</li>
-            <li>FIGURES & PINS</li>
-            <li>TRADING CARD GAME</li>
-            <li>CLOTHING</li>
-            <li>HOME</li>
-            <li>VIDEO GAME</li>
+            <li>Búsqueda de Pókemon</li>
+            <li>Comparación de Pokémon</li>
+            <li>Pokémon a detalle</li>
+            <li>Pókemon Favoritos</li>
           </ul>
         </div>
 
         {/* Segunda columna */}
         <div className="footer-section">
-          <h3>CUSTOMER SERVICE</h3>
+          <h3>ATENCIÓN AL CLIENTE</h3>
           <ul>
-            <li>SHIPPING</li>
-            <li>RETURN POLICY</li>
-            <li>ORDER STATUS</li>
-            <li>CONTACT US</li>
-            <li>FAQ</li>
+            <li>Política de Devoluciones</li>
+            <li>Contacta con Nosotros</li>
+            <li>Preguntas Frecuentes</li>
           </ul>
+
         </div>
 
         {/* Tercera columna */}
         <div className="footer-section">
-          <h3>SITE INFO</h3>
+          <h3>CREADORES</h3>
           <ul>
-            <li>ABOUT POKEMONCENTER.COM</li>
-            <li>ABOUT OUR PLUSH</li>
-            <li>日本版サイト</li>
+            <li>Randall Álvarez Chevez</li>
+            <li>Valeria Fernández Carvajal</li>
+            <li>Christian Cháves Villalobos</li>
           </ul>
         </div>
 
         {/* Cuarta columna */}
-        <div className="footer-section">
-          <h3>GET EMAIL UPDATES</h3>
-          <div className="email-updates">
-            <IonItem>
-              <IonInput placeholder="Enter your email"></IonInput>
-            </IonItem>
-            <IonButton expand="block" color="danger">SUBSCRIBE</IonButton>
-            <div className="country-selector">
-              <IonSelect placeholder="United States" interface="popover">
-                <IonSelectOption value="us">United States</IonSelectOption>
-                <IonSelectOption value="uk">United Kingdom</IonSelectOption>
-                <IonSelectOption value="jp">Japan</IonSelectOption>
-              </IonSelect>
-            </div>
-          </div>
+
+        <div className="footer-section image-section">
+          <img src="/assets/pikachu.png" alt="Pokémon Footer Art" className="footer-img" />
         </div>
+
       </div>
 
       {/* Copyright */}
       <div className="footer-copyright">
-        <p>© 2023 Pokémon. © 1995-2023 Nintendo/Creatures Inc./GAME FREAK inc.</p>
+        <p>© 2025 Pokémon. © POKELAB</p>
       </div>
     </IonFooter>
   );

@@ -1,6 +1,6 @@
-import { 
-  IonCard, IonCardContent, IonImg, IonNote, IonContent, 
-  IonSearchbar, IonToolbar, IonSkeletonText, IonButton, IonIcon 
+import {
+  IonCard, IonCardContent, IonImg, IonNote, IonContent,
+  IonSearchbar, IonToolbar, IonSkeletonText, IonButton, IonIcon
 } from '@ionic/react';
 import { fetchPokemonList, searchPokemon } from '../../services/PokemonService';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -74,33 +74,56 @@ const PokemonList: React.FC<PokemonListProps> = ({
     setError('');
     try {
       const data = await fetchPokemonList(limit, newOffset);
-      const formattedList = data.pokemon.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        sprite: p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`,
-        url: p.url || '',
-        types: p.types || [],
-        height: p.height,
-        weight: p.weight,
-        abilities: p.abilities || [],
-        stats: p.stats || []
+
+      if (!data || !data.results) {
+        throw new Error('Formato de respuesta inesperado');
+      }
+
+      const formattedList = await Promise.all(data.results.map(async (p: any, index: number) => {
+        const pokemonData = await fetchPokemonDetails(p.url || `https://pokeapi.co/api/v2/pokemon/${newOffset + index + 1}`);
+        
+        return {
+          id: pokemonData.id,
+          name: pokemonData.name,
+          sprite: pokemonData.sprites?.other?.['official-artwork']?.front_default ||
+            `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonData.id}.png`,
+          url: p.url || '',
+          types: pokemonData.types?.map((t: any) => t.type?.name).filter(Boolean) || [],
+          height: pokemonData.height,
+          weight: pokemonData.weight,
+          abilities: pokemonData.abilities?.map((a: any) => a.ability.name) || [],
+          stats: pokemonData.stats?.map((s: any) => ({
+            name: s.stat.name,
+            base: s.base_stat
+          })) || []
+        };
       }));
 
-      setPokemonList(formattedList);
-      setFilteredList(formattedList);
+      setPokemonList(prev => [...prev, ...formattedList]);
+      setFilteredList(prev => [...prev, ...formattedList]);
 
       if (onListLoaded) {
         onListLoaded(formattedList);
       }
     } catch (err) {
       console.error("Error loading Pokémon:", err);
-      setError('Error al cargar Pokémon');
+      setError('Error al cargar Pokémon. Intenta recargar la página.');
       setPokemonList([]);
       setFilteredList([]);
     } finally {
       setLoading(false);
     }
   }, [onListLoaded]);
+
+  const fetchPokemonDetails = async (url: string) => {
+    try {
+      const response = await fetch(url);
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching Pokémon details:", error);
+      return {};
+    }
+  };
 
   const handleSearch = useCallback(async (query: string) => {
     setSearchText(query);
@@ -126,7 +149,7 @@ const PokemonList: React.FC<PokemonListProps> = ({
           name: p.name,
           sprite: p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`,
           url: p.url || '',
-          types: p.types || [],
+          types: p.types?.filter(Boolean) || [],
           height: p.height,
           weight: p.weight,
           abilities: p.abilities || [],
@@ -192,6 +215,7 @@ const PokemonList: React.FC<PokemonListProps> = ({
                 <IonSkeletonText animated style={{ width: '80%', height: '20px', margin: '12px auto' }} />
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '12px' }}>
                   <IonSkeletonText animated style={{ width: '50px', height: '20px' }} />
+                  <IonSkeletonText animated style={{ width: '50px', height: '20px' }} />
                 </div>
               </IonCardContent>
             </IonCard>
@@ -220,6 +244,7 @@ const PokemonList: React.FC<PokemonListProps> = ({
                 key={pokemon.id}
                 className="pokemon-card"
                 button={false}
+                onClick={() => handlePokemonClick(pokemon)}
               >
                 <div className="pokemon-card-header">
                   <div className="pokemon-number">
@@ -237,7 +262,7 @@ const PokemonList: React.FC<PokemonListProps> = ({
                   </IonButton>
                 </div>
 
-                <div className="pokemon-card-content-wrapper" onClick={() => handlePokemonClick(pokemon)}>
+                <div className="pokemon-card-content-wrapper">
                   <IonCardContent className="pokemon-card-content">
                     <div className="pokemon-image-container">
                       <div className="pokemon-image-frame">
@@ -252,9 +277,8 @@ const PokemonList: React.FC<PokemonListProps> = ({
                       {pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1)}
                     </div>
 
-                    {/* Mostrar todos los tipos del Pokémon */}
                     <div className="pokemon-types-container">
-                      {pokemon.types.map((type, index) => (
+                      {pokemon.types?.map((type, index) => (
                         <div
                           key={index}
                           className={`pokemon-type-badge type-${type.toLowerCase()}`}

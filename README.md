@@ -8,10 +8,12 @@ Pokémon Details view, showing stats and images.
 
 Pokémon Comparator to compare two selected Pokémon.
 
-Technologies Used
-Frontend: React, Vite, CSS.
+Pokémon Favorite list.
 
-Backend: Node.js with Express.js.
+Technologies Used
+Frontend: React, Vite, CSS, indexedDB, Service Worker, Axios.
+
+Backend: Node.js with Express.js, Axios.
 
 Process Management: PM2.
 

@@ -1,8 +1,9 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3000/api/pokemon';
+const API_URL = 'https://pokeapi.co/api/v2'; // URL base de PokeAPI
+const CACHE_VERSION = 3; // Versión del caché para manejar migraciones
 
-// Tipos de Pokémon unificados
+// Tipos de Pokémon mejorados
 interface PokemonStat {
   name: string;
   base: number;
@@ -21,11 +22,15 @@ interface PokemonDetails extends BasicPokemon {
   types: string[];
   abilities: string[];
   stats: PokemonStat[];
+  lastUpdated?: number;
+  __fallback?: boolean;
 }
 
 interface PokemonListResponse {
   count: number;
-  pokemon: BasicPokemon[];
+  next: string | null;
+  previous: string | null;
+  results: BasicPokemon[];
 }
 
 interface PokemonComparison {
@@ -36,305 +41,331 @@ interface PokemonComparison {
   };
 }
 
-// Cache mejorado con IndexedDB
-export const openCacheDB = () => {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open('PokeCacheDB', 1);
-    
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains('pokemon')) {
-        db.createObjectStore('pokemon', { keyPath: 'name' });
-      }
-      if (!db.objectStoreNames.contains('pokemonList')) {
-        db.createObjectStore('pokemonList', { keyPath: 'key' });
-      }
-    };
-    
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+// ==================== CACHÉ CON INDEXEDDB ====================
+
+let dbPromise: Promise<IDBDatabase>;
+
+const openDatabase = (): Promise<IDBDatabase> => {
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open('PokemonCacheDB', CACHE_VERSION);
+
+      request.onupgradeneeded = (event) => {
+        const db = request.result;
+        
+        if (!db.objectStoreNames.contains('searchResults')) {
+          const searchStore = db.createObjectStore('searchResults', { 
+            keyPath: 'query' // Esto debe coincidir con lo que usas en saveToCache
+          });
+          searchStore.createIndex('timestamp', 'timestamp');
+        }
+      };
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  return dbPromise;
 };
 
-export const getFromCache = async (storeName: string, key: string) => {
+export const getFromCache = async <T>(storeName: string, key: string): Promise<T | null> => {
   try {
-    const db = await openCacheDB();
-    return new Promise<any>((resolve, reject) => {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
       const transaction = db.transaction(storeName, 'readonly');
       const store = transaction.objectStore(storeName);
       const request = store.get(key);
-      
-      request.onsuccess = () => resolve(request.result?.value || request.result);
-      request.onerror = () => reject(request.error);
+
+      request.onsuccess = () => {
+        if (request.result) {
+          // Verificar si los datos están obsoletos (más de 1 día)
+          if (request.result.lastUpdated && 
+              Date.now() - request.result.lastUpdated > 86400000) {
+            resolve(null); // Considerar obsoleto
+          } else {
+            resolve(request.result.value || request.result);
+          }
+        } else {
+          resolve(null);
+        }
+      };
+      request.onerror = () => {
+        console.error(`Error al leer de ${storeName}:`, request.error);
+        reject(request.error);
+      };
     });
   } catch (error) {
-    console.error('Error accessing cache:', error);
+    console.error('Error en getFromCache:', error);
     return null;
   }
 };
 
-export const saveToCache = async (storeName: string, key: string, value: any) => {
+export const saveToCache = async (storeName: string, key: string, value: any): Promise<void> => {
   try {
-    const db = await openCacheDB();
-    return new Promise<void>((resolve, reject) => {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
       const transaction = db.transaction(storeName, 'readwrite');
       const store = transaction.objectStore(storeName);
 
+      // Preparar datos según el tipo de store
+      let dataToSave;
       if (storeName === 'pokemon') {
-        // Guarda el objeto completo SIN sobrescribir el nombre
-        store.put({ 
+        dataToSave = { 
+          name: key.toLowerCase(),
+          id: value.id,
           ...value,
-          id: value.id,          // Asegura que el ID esté presente
-          name: value.name,      // Conserva el nombre original
-          sprite: value.sprite,  // Conserva el sprite
-          types: value.types     // Conserva los tipos
-        });
+          lastUpdated: Date.now()
+        };
+      } else if (storeName === 'searchResults') {
+        // Asegúrate que el objeto tenga la propiedad que coincide con el keyPath
+        dataToSave = {
+          query: key,  // Esto debe coincidir con el keyPath del object store
+          results: value.results || value,
+          timestamp: Date.now()
+        };
       } else {
-        store.put({ key, value });
+        dataToSave = {
+          key,
+          value,
+          timestamp: Date.now()
+        };
       }
 
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
+      const request = store.put(dataToSave);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => {
+        console.error(`Error al guardar en ${storeName}:`, request.error);
+        reject(request.error);
+      };
     });
   } catch (error) {
-    console.error('Error saving to cache:', error);
-    throw error; // Es importante propagar el error
+    console.error('Error en saveToCache:', error);
+    throw error;
   }
 };
 
+// ==================== CACHÉ EN MEMORIA ====================
 
-// Implementación de caché en memoria
 const searchCache = new Map<string, PokemonDetails[]>();
-let cachedPokemonList: BasicPokemon[] = [];
+const pokemonCache = new Map<string, PokemonDetails>();
+let fullPokemonList: BasicPokemon[] = [];
 
-// Función para verificar conexión
-const isOnline = () => navigator.onLine;
+// ==================== FUNCIONES DE UTILIDAD ====================
 
-/**
- * Obtiene la lista completa de Pokémon (con caché mejorado)
- */
-const getFullPokemonList = async (): Promise<BasicPokemon[]> => {
-  // Primero intentamos obtener de caché en memoria
-  if (cachedPokemonList.length > 0) return cachedPokemonList;
-  
-  // Luego intentamos obtener de IndexedDB
-  const cachedList = await getFromCache('pokemonList', 'fullList');
-  if (cachedList) {
-    cachedPokemonList = cachedList;
-    return cachedPokemonList;
-  }
+export const isOnline = (): boolean => navigator.onLine;
 
-  // Solo intentamos red si estamos online
-  if (isOnline()) {
-    try {
-      const response = await axios.get(`${API_URL}?limit=1000&offset=0`);
-      cachedPokemonList = response.data.pokemon.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        url: p.url || `${API_URL}/${p.name}`,
-        sprite: p.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`
-      }));
-      
-      // Guardamos en IndexedDB para futuras consultas offline
-      await saveToCache('pokemonList', 'fullList', cachedPokemonList);
-      return cachedPokemonList;
-    } catch (error) {
-      console.error('Error cargando lista completa de Pokémon:', error);
-      return [];
-    }
-  }
-  
-  return [];
+const getPokemonSprite = (id: number): string => {
+  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
 };
 
-/**
- * Búsqueda en tiempo real con soporte offline
- */
-export const searchPokemon = async (query: string): Promise<PokemonDetails[]> => {
-  if (!query.trim()) return [];
+const normalizePokemonName = (name: string): string => {
+  return name.toLowerCase().trim();
+};
 
-  const cacheKey = query.toLowerCase();
-  
+// ==================== FUNCIONES PRINCIPALES ====================
+
+export const getFullPokemonList = async (forceUpdate = false): Promise<BasicPokemon[]> => {
   // 1. Verificar caché en memoria
-  if (searchCache.has(cacheKey)) {
-    return searchCache.get(cacheKey)!;
+  if (!forceUpdate && fullPokemonList.length > 0) {
+    return fullPokemonList;
   }
 
   // 2. Verificar IndexedDB
-  const cachedResults = await getFromCache('pokemon', cacheKey);
-  if (cachedResults) {
-    return cachedResults;
+  if (!forceUpdate) {
+    const cachedList = await getFromCache<BasicPokemon[]>('pokemonList', 'fullList');
+    if (cachedList) {
+      fullPokemonList = cachedList;
+      return fullPokemonList;
+    }
   }
 
-  // 3. Solo intentar red si estamos online
+  // 3. Obtener de la API si hay conexión
   if (isOnline()) {
     try {
-      const allPokemon = await getFullPokemonList();
-      const isNumericSearch = !isNaN(Number(query));
-      const queryLower = query.toLowerCase();
+      const response = await axios.get(`${API_URL}/pokemon?limit=2000`);
+      const results = response.data.results;
 
-      const basicResults = allPokemon.filter(pokemon => {
-        if (isNumericSearch) {
-          return pokemon.id.toString().includes(query);
-        }
-        return pokemon.name.toLowerCase().includes(queryLower);
+      fullPokemonList = results.map((pokemon: any, index: number) => {
+        const id = index + 1;
+        return {
+          id,
+          name: pokemon.name,
+          url: pokemon.url,
+          sprite: getPokemonSprite(id)
+        };
       });
 
-      // Obtener detalles completos para cada resultado
-      const detailedResults = await Promise.all(
-        basicResults.map(pokemon => 
-          fetchPokemonDetails(pokemon.name).catch(error => {
-            console.error(`Error fetching details for ${pokemon.name}:`, error);
-            return null;
-          })
-        )
-      );
-
-      // Filtrar resultados nulos y ordenar
-      const validResults = detailedResults.filter(result => result !== null) as PokemonDetails[];
-      
-      validResults.sort((a, b) => {
-        const aIndex = a.name.toLowerCase().indexOf(queryLower);
-        const bIndex = b.name.toLowerCase().indexOf(queryLower);
-        return aIndex - bIndex || a.name.localeCompare(b.name);
-      });
-
-      // Guardar en todos los niveles de caché
-      searchCache.set(cacheKey, validResults);
-      await saveToCache('pokemon', cacheKey, validResults);
-      
-      return validResults;
+      // Guardar en caché
+      await saveToCache('pokemonList', 'fullList', fullPokemonList);
+      return fullPokemonList;
     } catch (error) {
-      console.error('Error en la búsqueda:', error);
-      return [];
+      console.error('Error al obtener lista completa:', error);
+      throw error;
     }
   }
-  
-  return [];
+
+  // 4. Fallback si estamos offline
+  return fullPokemonList.length > 0 ? fullPokemonList : [];
 };
 
-/**
- * Obtiene detalles de un Pokémon con soporte offline
- */
-export const fetchPokemonDetails = async (nameOrId: string | number): Promise<PokemonDetails> => {
-  const key = nameOrId.toString().toLowerCase();
-  const defaultSprite = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${typeof nameOrId === 'number' ? nameOrId : key.replace(/\D/g, '')}.png`;
-  const defaultUrl = `${API_URL}/${key}`; // URL base para el Pokémon
+export const fetchPokemonDetails = async (identifier: string | number): Promise<PokemonDetails> => {
+  const key = typeof identifier === 'number' ? identifier.toString() : normalizePokemonName(identifier);
 
-  // 1. Verificar caché
   try {
-    const cachedData = await getFromCache('pokemon', key);
-    if (cachedData && cachedData.id) {
-      return {
-        id: cachedData.id,
-        name: cachedData.name || `Pokémon ${cachedData.id}`,
-        sprite: cachedData.sprite || defaultSprite,
-        url: cachedData.url || defaultUrl, // <-- Añadido
-        types: cachedData.types || [],
-        height: cachedData.height || 0,
-        weight: cachedData.weight || 0,
-        abilities: cachedData.abilities || [],
-        stats: cachedData.stats || []
-      };
+    // 1. Verificar caché en memoria
+    if (pokemonCache.has(key)) {
+      return pokemonCache.get(key)!;
     }
-  } catch (cacheError) {
-    console.warn(`Error al leer caché para ${key}:`, cacheError);
-  }
 
-  // 2. Intentar desde la API si hay conexión
-  if (navigator.onLine) {
-    try {
-      const response = await axios.get(`${API_URL}/${key}`);
+    // 2. Verificar IndexedDB
+    const cachedData = await getFromCache<PokemonDetails>('pokemon', key);
+    if (cachedData && !cachedData.__fallback) {
+      pokemonCache.set(key, cachedData);
+      return cachedData;
+    }
+
+    // 3. Obtener de la API si hay conexión
+    if (isOnline()) {
+      const response = await axios.get(`${API_URL}/pokemon/${key}`);
       const data = response.data;
 
       const pokemonDetails: PokemonDetails = {
         id: data.id,
-        name: data.name || `Pokémon ${data.id}`,
-        sprite: data.sprites?.front_default || defaultSprite,
-        url: `${API_URL}/${data.id}`, // <-- Añadido (o data.url si existe)
-        types: data.types?.map((t: any) => t.type.name) || [],
-        height: data.height || 0,
-        weight: data.weight || 0,
-        abilities: data.abilities?.map((a: any) => a.ability.name) || [],
-        stats: data.stats?.map((s: any) => ({
+        name: data.name,
+        url: `${API_URL}/pokemon/${data.id}`,
+        sprite: data.sprites?.other?.['official-artwork']?.front_default || getPokemonSprite(data.id),
+        height: data.height / 10,
+        weight: data.weight / 10,
+        types: data.types.map((t: any) => t.type.name),
+        abilities: data.abilities.map((a: any) => a.ability.name),
+        stats: data.stats.map((s: any) => ({
           name: s.stat.name,
           base: s.base_stat
-        })) || []
+        })),
+        lastUpdated: Date.now()
       };
 
-      await saveToCache('pokemon', key, pokemonDetails);
+      // Guardar en caché
+      try {
+        pokemonCache.set(key, pokemonDetails);
+        await saveToCache('pokemon', key, pokemonDetails);
+      } catch (cacheError) {
+        console.error('Error al guardar en caché:', cacheError);
+      }
+      
       return pokemonDetails;
-    } catch (apiError) {
-      console.error(`Error en API para ${key}:`, apiError);
     }
-  }
 
-  // 3. Fallback para offline/errores
-  const fallbackData: PokemonDetails = {
-    id: Number(key) || 0,
-    name: `Pokémon ${key}`,
-    sprite: defaultSprite,
-    url: defaultUrl, // <-- Añadido
-    types: [],
-    height: 0,
-    weight: 0,
-    abilities: [],
-    stats: []
-  };
+    // 4. Si estamos offline y hay datos cacheados (aunque sean fallback)
+    if (cachedData) {
+      return cachedData;
+    }
 
-  try {
-    await saveToCache('pokemon', key, fallbackData);
+    // 5. Crear datos de fallback
+    return createFallbackPokemon(identifier);
   } catch (error) {
-    console.warn(`Error al guardar fallback para ${key}:`, error);
-  }
-
-  return fallbackData;
-};
-
-/**
- * Obtiene lista paginada de Pokémon
- */
-export const fetchPokemonList = async (limit: number = 10, offset: number = 0): Promise<PokemonListResponse> => {
-  try {
-    const response = await axios.get(`${API_URL}?limit=${limit}&offset=${offset}`);
+    console.error(`Error al obtener detalles de ${key}:`, error);
     
-    // Verificar si los datos están marcados como obsoletos
-    if (response.data.__stale) {
-      // Forzar recarga si estamos online
-      if (navigator.onLine) {
-        const freshResponse = await axios.get(`${API_URL}?limit=${limit}&offset=${offset}`, {
-          headers: { 'Cache-Control': 'no-cache' }
-        });
-        return freshResponse.data;
+    // Si es un 404, guardar en caché como no encontrado
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      const fallbackData = createFallbackPokemon(identifier);
+      try {
+        await saveToCache('pokemon', key, fallbackData);
+      } catch (cacheError) {
+        console.error('Error al guardar fallback:', cacheError);
       }
-    }
-    
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      if (error.response?.data.__stale && navigator.onLine) {
-        // Intentar nuevamente sin caché
-        const freshResponse = await axios.get(`${API_URL}?limit=${limit}&offset=${offset}`, {
-          headers: { 'Cache-Control': 'no-cache' }
-        });
-        return freshResponse.data;
-      }
-    }
-    
-    // Manejo de errores offline (mantén tu lógica existente)
-    if (!navigator.onLine) {
-      const cachedData = await getFromCache('pokemonList', `list-${limit}-${offset}`);
-      if (cachedData) {
-        return cachedData;
-      }
+      return fallbackData;
     }
     
     throw error;
   }
 };
-/**
- * Compara dos Pokémon
- */
+
+const createFallbackPokemon = (identifier: string | number): PokemonDetails & { __fallback: boolean } => {
+  const id = typeof identifier === 'number' ? identifier : parseInt(identifier, 10) || 0;
+  const name = typeof identifier === 'string' ? identifier : `pokemon-${identifier}`;
+  
+  return {
+    id,
+    name,
+    url: `${API_URL}/pokemon/${id}`,
+    sprite: getPokemonSprite(id),
+    height: 0,
+    weight: 0,
+    types: [],
+    abilities: [],
+    stats: [],
+    lastUpdated: Date.now(),
+    __fallback: true
+  };
+};
+
+export const searchPokemon = async (query: string): Promise<PokemonDetails[]> => {
+  if (!query.trim()) return [];
+
+  const normalizedQuery = normalizePokemonName(query);
+  const cacheKey = `search:${normalizedQuery}`;
+
+  try {
+    const allPokemon = await getFullPokemonList();
+    const isNumericSearch = !isNaN(Number(query));
+
+    const basicResults = allPokemon.filter(pokemon => {
+      if (isNumericSearch) {
+        return pokemon.id.toString().includes(query);
+      }
+      return pokemon.name.toLowerCase().includes(normalizedQuery);
+    });
+
+    const detailedResults = await Promise.all(
+      basicResults.map(async pokemon => {
+        try {
+          return await fetchPokemonDetails(pokemon.id);
+        } catch (error) {
+          console.error(`Error obteniendo detalles para ${pokemon.name}:`, error);
+          return null;
+        }
+      })
+    );
+
+    const validResults = detailedResults.filter((result): result is PokemonDetails => result !== null);
+
+    // Guardar en caché solo si hay resultados válidos
+    if (validResults.length > 0) {
+      try {
+        await saveToCache('searchResults', cacheKey, {
+          query: cacheKey,  // Asegura que tenemos el keyPath requerido
+          results: validResults,
+          timestamp: Date.now()
+        });
+      } catch (cacheError) {
+        console.error('Error al guardar resultados de búsqueda:', cacheError);
+      }
+    }
+
+    return validResults;
+  } catch (error) {
+    console.error('Error en la búsqueda:', error);
+    return [];
+  }
+};
+
+export const fetchPokemonList = async (limit: number = 20, offset: number = 0): Promise<PokemonListResponse> => {
+  try {
+    const response = await axios.get(`${API_URL}/pokemon?limit=${limit}&offset=${offset}`);
+    return {
+      count: response.data.count,
+      next: response.data.next,
+      previous: response.data.previous,
+      results: response.data.results
+    };
+  } catch (error) {
+    console.error('Error al obtener lista paginada:', error);
+    throw error;
+  }
+};
+
 export const comparePokemon = async (name1: string, name2: string): Promise<PokemonComparison> => {
   try {
     const [pokemon1, pokemon2] = await Promise.all([
@@ -344,7 +375,7 @@ export const comparePokemon = async (name1: string, name2: string): Promise<Poke
 
     // Crear objeto de diferencias dinámicamente
     const differences: {[key: string]: number} = {};
-    
+
     // Comparar cada estadística
     pokemon1.stats.forEach((stat, index) => {
       if (pokemon2.stats[index]) {
@@ -362,3 +393,51 @@ export const comparePokemon = async (name1: string, name2: string): Promise<Poke
     throw error;
   }
 };
+
+// ==================== FUNCIONES DE MANTENIMIENTO ====================
+
+export const clearCache = async (): Promise<void> => {
+  try {
+    // Limpiar caché en memoria
+    searchCache.clear();
+    pokemonCache.clear();
+    fullPokemonList = [];
+
+    // Limpiar IndexedDB
+    const db = await openDatabase();
+    const storeNames = ['pokemon', 'pokemonList', 'searchResults'];
+    
+    await Promise.all(
+      storeNames.map(storeName => {
+        return new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction(storeName, 'readwrite');
+          const store = transaction.objectStore(storeName);
+          const request = store.clear();
+
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      })
+    );
+
+    console.log('Caché limpiado exitosamente');
+  } catch (error) {
+    console.error('Error al limpiar el caché:', error);
+    throw error;
+  }
+};
+
+export const preloadPokemonData = async (ids: number[]): Promise<void> => {
+  if (!isOnline()) return;
+
+  try {
+    await Promise.all(
+      ids.map(id => fetchPokemonDetails(id).catch(() => null))
+    );
+    console.log(`Precarga completada para ${ids.length} Pokémon`);
+  } catch (error) {
+    console.error('Error en precarga:', error);
+  }
+};
+
+
